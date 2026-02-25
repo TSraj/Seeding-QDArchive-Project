@@ -1,0 +1,9 @@
+$Data
+   Names= Item Prom_Gr1up_1 Prom_Gr2up_2 Prom_Gr3up_3 Prom_Gr4up_4 
+          Prom_general;
+   {DO NOT EDIT THE ABOVE LIST}
+   File='Importancia_HUDAP_POSAC.rwd';
+   {DO NOT EDIT THE ABOVE FILE NAME}
+   Format='FREE';
+   {DO NOT EDIT THE ABOVE FORMAT SPECIFICATION}
+
