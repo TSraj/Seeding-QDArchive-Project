@@ -1,3 +1,0 @@
-Description of files:
-Dr4 was the 4th highest ranking drug from a 12+ million compound virtual screening process on the zika helicase from a prior study (https://doi.org/10.1016/j.jmgm.2021.108001).
-The Zika and Dengue helicases were then aligned, so dr4 was placed in roughly the same coordinates in ATP binding site as was docked in the Zika helicase. The ATP binding sites in flaviviruses are highly conserved, and the P-loop is identical in both of these cases, so dr4 should share a very similar affinity. To test, run the workflow on both complexes and see if the drug remains in the pocket in both instances!
