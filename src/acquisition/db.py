@@ -22,6 +22,23 @@ def init_db():
             total_size_bytes INTEGER
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS file_metadata (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_url TEXT,
+            download_timestamp TEXT,
+            local_dir_name TEXT NOT NULL,
+            local_file_name TEXT NOT NULL,
+            context_repository TEXT,
+            license TEXT,
+            uploader_name TEXT,
+            uploader_email TEXT,
+            doi TEXT,
+            file_type TEXT,
+            year TEXT,
+            author TEXT
+        )
+    ''')
     conn.commit()
     conn.close()
 
@@ -47,6 +64,47 @@ def mark_downloaded(record_id: int, title: str, doi: str, folder_name: str, matc
         (id, title, doi, folder_name, matched_extensions, download_date, total_files, total_size_bytes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ''', (record_id, title, doi, folder_name, ext_str, now_str, total_files, total_size_bytes))
+    
+    conn.commit()
+    conn.close()
+
+def insert_file_metadata(
+    file_url: str,
+    local_dir_name: str,
+    local_file_name: str,
+    context_repository: str,
+    license: str,
+    uploader_name: str,
+    uploader_email: str,
+    doi: str,
+    file_type: str,
+    year: str,
+    author: str
+):
+    """Insert a new file metadata record."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().isoformat()
+    
+    cursor.execute('''
+        INSERT INTO file_metadata 
+        (file_url, download_timestamp, local_dir_name, local_file_name, context_repository, 
+         license, uploader_name, uploader_email, doi, file_type, year, author)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        file_url or "", 
+        now_str, 
+        local_dir_name or "", 
+        local_file_name or "", 
+        context_repository or "", 
+        license or "", 
+        uploader_name or "", 
+        uploader_email or "", 
+        doi or "", 
+        file_type or "", 
+        year or "", 
+        author or ""
+    ))
     
     conn.commit()
     conn.close()

@@ -2,7 +2,14 @@ import time
 import requests
 from .config import ZENODO_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR
 from .downloader import download_record, sanitize_folder_name
-from .db import is_downloaded, mark_downloaded
+from .db import is_downloaded, mark_downloaded, insert_file_metadata
+
+def extract_zenodo_meta(record):
+    meta = record.get("metadata", {})
+    author = "; ".join([c.get("name", "") for c in meta.get("creators", [])])
+    year = meta.get("publication_date", "")[:4] if meta.get("publication_date") else ""
+    lic = meta.get("license", {}).get("id", "")
+    return author, year, author, "", lic
 
 def api_get(url, params=None):
     """Wrapper for requests to handle rate limit delay gracefully."""
@@ -129,16 +136,36 @@ def scrape(extensions=TARGET_EXTENSIONS, max_pages=MAX_PAGES, dry_run=False, max
             if dry_run:
                 continue
                 
-            # Perform Download
-            total_dl, total_bytes, folder_name = download_record(record, files)
+            # Perform Download (sending all files in the record)
+            total_dl, total_bytes, folder_name, downloaded_files = download_record(record, files)
             
             # Log successful download to local DB
-            mark_downloaded(
-                record_id=record_id,
-                title=title,
-                doi=doi,
-                folder_name=folder_name,
-                matched_extensions=matched_exts,
-                total_files=total_dl,
-                total_size_bytes=total_bytes
-            )
+            if total_dl > 0:
+                mark_downloaded(
+                    record_id=record_id,
+                    title=title,
+                    doi=doi,
+                    folder_name=folder_name,
+                    matched_extensions=matched_exts,
+                    total_files=total_dl,
+                    total_size_bytes=total_bytes
+                )
+                
+                author, year, up_name, up_email, lic = extract_zenodo_meta(record)
+                for dl_file in downloaded_files:
+                    file_info = next((f for f in files if f.get("key") == dl_file), None)
+                    file_url = file_info.get("links", {}).get("content", "") if file_info else ""
+                    file_type = dl_file.split(".")[-1] if "." in dl_file else ""
+                    insert_file_metadata(
+                        file_url=file_url,
+                        local_dir_name=folder_name,
+                        local_file_name=dl_file,
+                        context_repository="Zenodo",
+                        license=lic[:100],
+                        uploader_name=up_name,
+                        uploader_email=up_email,
+                        doi=doi,
+                        file_type=file_type,
+                        year=year,
+                        author=author
+                    )

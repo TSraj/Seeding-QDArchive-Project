@@ -1,0 +1,19 @@
+scrapers:
+  zenodo: false
+  dataverse: false
+  dataverse_no: false
+  borealis: false
+  aussda: false
+  heidata: false
+  figshare: false
+  osf: true
+
+settings:
+  zenodo_api_base: "https://zenodo.org/api"
+  dataverse_api_base: "https://dataverse.harvard.edu/api"
+  dataverse_no_api_base: "https://dataverse.no/api"
+  borealis_api_base: "https://borealisdata.ca/api"
+  aussda_api_base: "https://data.aussda.at/api"
+  heidata_api_base: "https://heidata.uni-heidelberg.de/api"
+  figshare_api_base: "https://api.figshare.com/v2"
+  osf_api_base: "https://api.osf.io/v2"

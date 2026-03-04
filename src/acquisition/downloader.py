@@ -99,6 +99,7 @@ def download_record(record: dict, files: list) -> tuple:
         
     total_files = 0
     total_bytes = 0
+    downloaded_file_names = []
     
     print(f"Downloading record: {title} ({len(files)} files, {MAX_DOWNLOAD_WORKERS} threads)")
     
@@ -114,5 +115,11 @@ def download_record(record: dict, files: list) -> tuple:
             if success:
                 total_files += 1
                 total_bytes += file_size
+                downloaded_file_names.append(filename)
+                
+    if total_files == 0:
+        print(f"  No files were successfully downloaded for {title} (possibly due to restrictions or network errors). Cleaning up empty folder.")
+        import shutil
+        shutil.rmtree(record_dir, ignore_errors=True)
             
-    return total_files, total_bytes, folder_name
+    return total_files, total_bytes, folder_name, downloaded_file_names
