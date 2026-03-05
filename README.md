@@ -92,6 +92,19 @@ This table stores highly granular **file-level** information. One row is created
 > [!NOTE]
 > You may also see a third table named `sqlite_sequence`. This is an internal SQLite table generated automatically to manage the auto-incrementing IDs for the `file_metadata` table.
 
+## Exporting Data
+
+To export the acquired metadata and records from the SQLite database into CSV files, you can use the provided export script. This is especially useful for sharing the data or analyzing it in external tools like Excel or R.
+
+Run the following command in your terminal from the project's root directory:
+```bash
+python export_csv.py
+```
+
+This will read the `qdarchive.db` database and generate two CSV files in the `data/metadata/` directory:
+- `records_export.csv`
+- `file_metadata_export.csv`
+
 ## Purpose and Research Implication
 
 The **Seeding QDArchive** acts as the foundational infrastructure for a larger meta-research initiative. By systematically compiling thousands of disparate QDA files and their associated metadata, this tool enables researchers to:

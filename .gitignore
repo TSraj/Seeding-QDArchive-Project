@@ -212,3 +212,6 @@ __marimo__/
 
 data/
 scraper.log
+
+# Exported CSV data
+*.csv
