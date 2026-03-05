@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Seeding QDArchive** is a systematic, automated pipeline designed to discover, acquire, and curate open qualitative research data (QDA) from prominent digital repositories. As the movement toward Open Science expands, the sharing of qualitative data—such as interview transcripts, coding trees, and multimedia files—remains fragmented across various platforms and formats. This project addresses the challenge of discovering and consolidating these disparate resources into a unified, accessible, and analytically viable archive.
+**Seeding QDArchive** is a systematic, automated pipeline designed to discover, acquire, and curate open qualitative research data (QDA) from prominent digital repositories. As the movement toward Open Science expands, the sharing of qualitative data such as interview transcripts, coding trees, and multimedia files remains fragmented across various platforms and formats. This project addresses the challenge of discovering and consolidating these disparate resources into a unified, accessible, and analytically viable archive.
 
 The primary objectives of the **Seeding QDArchive** pipeline are to:
 - **Acquire** open qualitative research data (QDA files) across extensive online repositories.
