@@ -14,6 +14,9 @@ from . import aussda_scraper
 from . import heidata_scraper
 from . import figshare_scraper
 from . import osf_scraper
+from . import qdr_scraper
+from . import dans_scraper
+from . import ada_scraper
 
 LOG_FILE = PROJECT_ROOT / "scraper.log"
 
@@ -190,6 +193,42 @@ def main():
         print("  Starting OSF Scraper")
         print("=================================")
         osf_scraper.scrape(
+            extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        scrapers_run += 1
+        
+    if SCRAPERS_CONFIG.get("qdr", False):
+        print("\n=================================")
+        print("  Starting QDR Scraper")
+        print("=================================")
+        qdr_scraper.scrape(
+            extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        scrapers_run += 1
+        
+    if SCRAPERS_CONFIG.get("dans", False):
+        print("\n=================================")
+        print("  Starting DANS Scraper")
+        print("=================================")
+        dans_scraper.scrape(
+            extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        scrapers_run += 1
+
+    if SCRAPERS_CONFIG.get("ada", False):
+        print("\n=================================")
+        print("  Starting ADA Scraper")
+        print("=================================")
+        ada_scraper.scrape(
             extensions=extensions,
             max_pages=args.max_pages,
             dry_run=args.dry_run,

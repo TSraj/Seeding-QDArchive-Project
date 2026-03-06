@@ -6,7 +6,10 @@ scrapers:
   aussda: false
   heidata: false
   figshare: false
-  osf: true
+  osf: false
+  qdr: false
+  dans: false
+  ada: true
 
 settings:
   zenodo_api_base: "https://zenodo.org/api"
@@ -17,3 +20,6 @@ settings:
   heidata_api_base: "https://heidata.uni-heidelberg.de/api"
   figshare_api_base: "https://api.figshare.com/v2"
   osf_api_base: "https://api.osf.io/v2"
+  qdr_api_base: "https://data.qdr.syr.edu/api"
+  dans_api_base: "https://dataverse.nl/api"
+  ada_api_base: "https://dataverse.ada.edu.au/api"
