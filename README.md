@@ -23,6 +23,9 @@ The pipeline seamlessly interfaces with the REST APIs of several major multidisc
 - **Borealis** (The Canadian Dataverse Repository)
 - **AUSSDA** (The Austrian Social Science Data Archive)
 - **heiDATA** (Heidelberg University Dataverse)
+- **QDR** (Qualitative Data Repository - Syracuse University)
+- **DANS** (Data Archiving and Networked Services - KNAW)
+- **ADA** (Australian Data Archive)
 
 ## Targeted Data Formats
 

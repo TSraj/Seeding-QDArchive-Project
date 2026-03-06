@@ -34,6 +34,9 @@ AUSSDA_API_BASE = _zenodo_settings.get("aussda_api_base", "https://data.aussda.a
 HEIDATA_API_BASE = _zenodo_settings.get("heidata_api_base", "https://heidata.uni-heidelberg.de/api")
 FIGSHARE_API_BASE = "https://api.figshare.com/v2"
 OSF_API_BASE = "https://api.osf.io/v2"
+QDR_API_BASE = _zenodo_settings.get("qdr_api_base", "https://data.qdr.syr.edu/api")
+DANS_API_BASE = _zenodo_settings.get("dans_api_base", "https://dataverse.nl/api")
+ADA_API_BASE = _zenodo_settings.get("ada_api_base", "https://dataverse.ada.edu.au/api")
 
 RATE_LIMIT_DELAY = 2.0  # seconds between API requests
 MAX_PAGES = _zenodo_settings.get("max_pages", 40)          # default max pages per search query (40*25=1000)
