@@ -29,7 +29,7 @@ def compute_md5(file_path: Path) -> str:
             hash_md5.update(chunk)
     return "md5:" + hash_md5.hexdigest()
 
-def _download_single_file(file_info: dict, record_dir: Path) -> tuple:
+def _download_single_file(file_info: dict, record_dir: Path, headers: dict = None) -> tuple:
     """
     Downloads a single file from a Zenodo record.
     Returns (success: bool, filename: str, file_size: int).
@@ -59,7 +59,7 @@ def _download_single_file(file_info: dict, record_dir: Path) -> tuple:
     # Download file with progress bar
     print(f"  Downloading {filename}...")
     try:
-        response = requests.get(download_url, stream=True, timeout=60)
+        response = requests.get(download_url, stream=True, timeout=60, headers=headers)
         response.raise_for_status()
 
         with open(file_path, 'wb') as f:
@@ -79,7 +79,7 @@ def _download_single_file(file_info: dict, record_dir: Path) -> tuple:
         print(f"  Failed to download {filename}: {e}")
         return (False, filename, 0)
 
-def download_record(record: dict, files: list) -> tuple:
+def download_record(record: dict, files: list, headers: dict = None) -> tuple:
     """
     Downloads all files from a Zenodo record in parallel and saves the metadata.
     Returns (total_files_downloaded, total_bytes_downloaded, folder_name).
@@ -106,7 +106,7 @@ def download_record(record: dict, files: list) -> tuple:
     # Submit all file downloads to the thread pool
     with ThreadPoolExecutor(max_workers=MAX_DOWNLOAD_WORKERS) as executor:
         futures = {
-            executor.submit(_download_single_file, file_info, record_dir): file_info
+            executor.submit(_download_single_file, file_info, record_dir, headers): file_info
             for file_info in files
         }
         

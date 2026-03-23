@@ -1,13 +1,30 @@
 import time
 import requests
-from .config import OSF_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR
+from .config import OSF_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR, SMART_QUERIES, NON_QUALITATIVE_KEYWORDS
 from .downloader import download_record, sanitize_folder_name
-from .db import is_downloaded, mark_downloaded, insert_file_metadata
+from .db import is_downloaded, insert_project, insert_file, insert_keyword, insert_person_role, insert_license
 
 def extract_osf_meta(attrs):
-    author = ""
-    year = attrs.get("date_created", "")[:4] if attrs.get("date_created") else ""
-    return author, year, author, "", ""
+    title = attrs.get("title", "Unknown")
+    description = attrs.get("description", "")
+    language = "" 
+    version = "" 
+    upload_date = attrs.get("date_created", "")
+    
+    keywords = attrs.get("tags", [])
+    lic = attrs.get("license", {}).get("name", "")
+    persons = []
+        
+    return {
+        "title": title,
+        "description": description,
+        "language": language,
+        "version": version,
+        "upload_date": upload_date,
+        "keywords": keywords,
+        "license": lic,
+        "persons": persons
+    }
 
 def api_get(url, params=None):
     """Wrapper for requests to handle rate limit delay gracefully."""
@@ -191,31 +208,210 @@ def scrape(extensions=TARGET_EXTENSIONS, max_pages=MAX_PAGES, dry_run=False, max
             total_dl, total_bytes, folder_name, downloaded_files = download_record(attrs, files_to_download)
             
             if total_dl > 0:
-                mark_downloaded(
-                    record_id=record_id,
-                    title=title,
+                parsed_meta = extract_osf_meta(attrs)
+                project_url = f"https://osf.io/{node_id}"
+                # OSF usually does not provide DOI trivially on bare nodes
+                
+                db_record_id = (hash(node_id) % (10**8)) + 6000000000
+                insert_project(
+                    project_id=db_record_id,
+                    query_string=ext,
+                    repository_name="OSF",
+                    repository_url="https://osf.io",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
                     doi=node_id,
-                    folder_name=folder_name,
-                    matched_extensions=list(actual_matched_extensions),
-                    total_files=total_dl,
-                    total_size_bytes=total_bytes
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
                 )
                 
-                author, year, up_name, up_email, lic = extract_osf_meta(attrs)
+                if parsed_meta["license"]:
+                    insert_license(db_record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(db_record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(db_record_id, p["name"], p["role"])
+                        
                 for dl_file in downloaded_files:
-                    file_info = next((f for f in files_to_download if f["key"] == dl_file), None)
-                    file_url = file_info["links"]["content"] if file_info else ""
                     file_type = dl_file.split(".")[-1] if "." in dl_file else ""
-                    insert_file_metadata(
-                        file_url=file_url,
-                        local_dir_name=folder_name,
-                        local_file_name=dl_file,
-                        context_repository="OSF",
-                        license=lic[:100],
-                        uploader_name=up_name,
-                        uploader_email=up_email,
-                        doi=node_id,
+                    insert_file(
+                        project_id=db_record_id,
+                        file_name=dl_file,
                         file_type=file_type,
-                        year=year,
-                        author=author
+                        status="SUCCESS"
+                    )
+
+
+def is_qualitative_dataset_osf(attrs):
+    """Check if a dataset is likely qualitative research by screening against exclusion keywords."""
+    title = attrs.get("title", "")
+    description = attrs.get("description", "")
+    combined_text = f"{title} {description}".lower()
+    
+    for keyword in NON_QUALITATIVE_KEYWORDS:
+        if keyword.lower() in combined_text:
+            print(f"  [SKIP] Non-qualitative node detected (matched '{keyword}'): {title[:80]}")
+            return False
+    return True
+
+def search_smart_osf(query: str, max_pages: int = MAX_PAGES):
+    """Search OSF using a smart query."""
+    print(f"\n--- Smart Query on OSF: '{query}' ---")
+    nodes_found = []
+    
+    search_url = f"{OSF_API_BASE}/nodes/"
+    
+    for page in range(1, max_pages + 1):
+        params = {
+            "q": query,
+            "page": page,
+            "page[size]": RESULTS_PER_PAGE
+        }
+        
+        try:
+            data = api_get(search_url, params)
+            hits = data.get("data", [])
+            
+            if not hits:
+                break
+                
+            nodes_found.extend(hits)
+            
+            if not data.get("links", {}).get("next"):
+                break
+                
+        except Exception as e:
+            print(f"Error searching OSF for smart query '{query}': {e}")
+            break
+            
+    return nodes_found
+
+def scrape_smart(queries=SMART_QUERIES, max_pages=MAX_PAGES, dry_run=False, max_runtime_hours=None):
+    """Orchestrates smart-query-based scraping for OSF."""
+    processed_node_ids = set()
+    start_time = time.time()
+    
+    for query in queries:
+        if max_runtime_hours is not None:
+            elapsed_hours = (time.time() - start_time) / 3600
+            if elapsed_hours >= max_runtime_hours:
+                print("\n[INFO] Maximum runtime reached. Stopping OSF smart query scraper.")
+                break
+                
+        nodes = search_smart_osf(query, max_pages)
+        print(f"Found {len(nodes)} potential nodes for smart query '{query}' in OSF. Processing...")
+        
+        for node in nodes:
+            node_id = node.get("id")
+            attrs = node.get("attributes", {})
+            title = attrs.get("title", "Unknown_OSF_Node")
+            
+            if not node_id:
+                continue
+                
+            record_str = f"osf_smart_{node_id}"
+            
+            if record_str in processed_node_ids:
+                continue 
+            processed_node_ids.add(record_str)
+            
+            folder_name_check = sanitize_folder_name(title)
+            if (RAW_DIR / folder_name_check).exists():
+                print(f"Skipping OSF Node '{title}': Folder already exists.")
+                continue
+
+            db_record_id = (hash(node_id) % (10**8)) + 9500000000
+
+            if not dry_run and is_downloaded(db_record_id):
+                print(f"Skipping OSF Smart Query Node {db_record_id}: Already downloaded.")
+                continue
+
+            if max_runtime_hours is not None:
+                elapsed_hours = (time.time() - start_time) / 3600
+                if elapsed_hours >= max_runtime_hours:
+                    return
+
+            print(f"\n[SMART MATCH] OSF Project '{title}' ({node_id}) matched smart query: {query}")
+            
+            if not is_qualitative_dataset_osf(attrs):
+                continue
+                
+            print(f"  Fetching full file list for OSF node {node_id}...")
+            all_osf_files = get_all_node_files(node_id)
+            if not all_osf_files:
+                print(f"  No files found in {node_id}. Skipping.")
+                continue
+
+            print(f"  Found {len(all_osf_files)} total files. Queuing ALL for download.")
+            
+            if dry_run:
+                continue
+                
+            files_to_download = []
+            for f in all_osf_files:
+                f_attrs = f.get("attributes", {})
+                download_url = f.get("links", {}).get("download")
+                
+                if download_url:
+                    files_to_download.append({
+                        "key": f_attrs.get("path", f_attrs.get("name")),
+                        "size": f_attrs.get("size", 0),
+                        "checksum": "",
+                        "links": {
+                            "content": download_url
+                        }
+                    })
+            
+            total_dl, total_bytes, folder_name, downloaded_files = download_record(attrs, files_to_download)
+            
+            if total_dl > 0:
+                parsed_meta = extract_osf_meta(attrs)
+                project_url = f"https://osf.io/{node_id}"
+                
+                insert_project(
+                    project_id=db_record_id,
+                    query_string=query,
+                    repository_name="OSF",
+                    repository_url="https://osf.io",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
+                    doi=node_id,
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
+                )
+                
+                if parsed_meta["license"]:
+                    insert_license(db_record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(db_record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(db_record_id, p["name"], p["role"])
+                        
+                for dl_file in downloaded_files:
+                    file_type = dl_file.split(".")[-1] if "." in dl_file else ""
+                    insert_file(
+                        project_id=db_record_id,
+                        file_name=dl_file,
+                        file_type=file_type,
+                        status="SUCCESS"
                     )

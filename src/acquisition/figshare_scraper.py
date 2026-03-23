@@ -1,13 +1,35 @@
 import time
 import requests
-from .config import FIGSHARE_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR
+from .config import FIGSHARE_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR, SMART_QUERIES, NON_QUALITATIVE_KEYWORDS
 from .downloader import download_record, sanitize_folder_name
-from .db import is_downloaded, mark_downloaded, insert_file_metadata
+from .db import is_downloaded, insert_project, insert_file, insert_keyword, insert_person_role, insert_license
 
 def extract_figshare_meta(article):
-    author = "; ".join([a.get("full_name", "") for a in article.get("authors", [])])
-    year = article.get("published_date", "")[:4] if article.get("published_date") else ""
-    return author, year, author, "", ""
+    title = article.get("title", "Unknown")
+    description = article.get("description", "")
+    language = ""
+    version = str(article.get("version", ""))
+    upload_date = article.get("published_date", "")
+    
+    keywords = article.get("tags", [])
+    if isinstance(keywords, str): keywords = [keywords]
+    
+    lic = article.get("license", {}).get("name", "")
+    
+    persons = []
+    for a in article.get("authors", []):
+        persons.append({"name": a.get("full_name", ""), "role": "author"})
+        
+    return {
+        "title": title,
+        "description": description,
+        "language": language,
+        "version": version,
+        "upload_date": upload_date,
+        "keywords": keywords,
+        "license": lic,
+        "persons": persons
+    }
 
 def api_request(method, url, params=None, json=None):
     """Wrapper for requests to handle rate limit delay gracefully."""
@@ -148,31 +170,209 @@ def scrape(extensions=TARGET_EXTENSIONS, max_pages=MAX_PAGES, dry_run=False, max
             total_dl, total_bytes, folder_name, downloaded_files = download_record(article, files_to_download)
             
             if total_dl > 0:
-                mark_downloaded(
-                    record_id=record_id,
-                    title=title,
+                parsed_meta = extract_figshare_meta(article)
+                project_url = article.get("url_public_html", "")
+                
+                insert_project(
+                    project_id=record_id,
+                    query_string=ext,
+                    repository_name="Figshare",
+                    repository_url="https://figshare.com",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
                     doi=doi,
-                    folder_name=folder_name,
-                    matched_extensions=list(actual_matched_extensions),
-                    total_files=total_dl,
-                    total_size_bytes=total_bytes
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
                 )
                 
-                author, year, up_name, up_email, lic = extract_figshare_meta(article)
+                if parsed_meta["license"]:
+                    insert_license(record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(record_id, p["name"], p["role"])
+                        
                 for dl_file in downloaded_files:
-                    file_info = next((f for f in files_to_download if f["key"] == dl_file), None)
-                    file_url = file_info["links"]["content"] if file_info else ""
                     file_type = dl_file.split(".")[-1] if "." in dl_file else ""
-                    insert_file_metadata(
-                        file_url=file_url,
-                        local_dir_name=folder_name,
-                        local_file_name=dl_file,
-                        context_repository="Figshare",
-                        license=lic[:100],
-                        uploader_name=up_name,
-                        uploader_email=up_email,
-                        doi=doi,
+                    insert_file(
+                        project_id=record_id,
+                        file_name=dl_file,
                         file_type=file_type,
-                        year=year,
-                        author=author
+                        status="SUCCESS"
+                    )
+
+def is_qualitative_dataset_figshare(article_data):
+    """Check if a dataset is likely qualitative research by screening against exclusion keywords."""
+    title = article_data.get("title", "")
+    description = article_data.get("description", "")
+    combined_text = f"{title} {description}".lower()
+    
+    for keyword in NON_QUALITATIVE_KEYWORDS:
+        if keyword.lower() in combined_text:
+            print(f"  [SKIP] Non-qualitative dataset detected (matched '{keyword}'): {title[:80]}")
+            return False
+    return True
+
+def search_smart_figshare(query: str, max_pages: int = MAX_PAGES):
+    """Search Figshare using a smart query."""
+    print(f"\n--- Smart Query on Figshare: '{query}' ---")
+    articles_found = []
+    
+    search_url = f"{FIGSHARE_API_BASE}/articles/search"
+    
+    for page in range(1, max_pages + 1):
+        json_body = {
+            "search_for": query,
+            "page": page,
+            "page_size": RESULTS_PER_PAGE
+        }
+        
+        try:
+            hits = api_request("POST", search_url, json=json_body)
+            
+            if not hits:
+                break
+                
+            articles_found.extend(hits)
+            
+            if len(hits) < RESULTS_PER_PAGE:
+                break
+                
+        except Exception as e:
+            print(f"Error fetching page {page} from Figshare for smart query '{query}': {e}")
+            break
+            
+    return articles_found
+
+def scrape_smart(queries=SMART_QUERIES, max_pages=MAX_PAGES, dry_run=False, max_runtime_hours=None):
+    """Orchestrates smart-query-based scraping for Figshare."""
+    processed_article_ids = set()
+    start_time = time.time()
+    
+    for query in queries:
+        if max_runtime_hours is not None:
+            elapsed_hours = (time.time() - start_time) / 3600
+            if elapsed_hours >= max_runtime_hours:
+                print("\n[INFO] Maximum runtime reached. Stopping Figshare smart query scraper.")
+                break
+                
+        articles = search_smart_figshare(query, max_pages)
+        print(f"Found {len(articles)} potential articles for smart query '{query}' in Figshare. Processing...")
+        
+        for article in articles:
+            article_id = article.get("id")
+            title = article.get("title", "Unknown_Figshare_Article")
+            doi = article.get("doi", f"figshare_{article_id}")
+            
+            if not article_id:
+                continue
+                
+            record_str = f"figshare_smart_{article_id}"
+            
+            if record_str in processed_article_ids:
+                continue 
+            processed_article_ids.add(record_str)
+            
+            folder_name_check = sanitize_folder_name(title)
+            if (RAW_DIR / folder_name_check).exists():
+                print(f"Skipping Figshare Article '{title}': Folder already exists.")
+                continue
+
+            db_record_id = (int(article_id) % (10**8)) + 8500000000
+
+            if not dry_run and is_downloaded(db_record_id):
+                print(f"Skipping Figshare Smart Query Article {db_record_id}: Already downloaded.")
+                continue
+                
+            if max_runtime_hours is not None:
+                elapsed_hours = (time.time() - start_time) / 3600
+                if elapsed_hours >= max_runtime_hours:
+                    return
+            
+            print(f"\n[SMART MATCH] Figshare Article '{title}' ({article_id}) matched smart query: {query}")
+            
+            # Fetch article details to check description for filtering
+            try:
+                article_url = f"{FIGSHARE_API_BASE}/articles/{article_id}"
+                article_full = api_request("GET", article_url)
+            except Exception as e:
+                print(f"  Failed to fetch full article details for {article_id}: {e}")
+                continue
+
+            if not is_qualitative_dataset_figshare(article_full):
+                continue
+
+            files = get_article_files(article_id)
+            if not files:
+                print(f"  No files found in {article_id}. Skipping.")
+                continue
+                
+            print(f"  Found {len(files)} total files. Queuing ALL for download.")
+            
+            if dry_run:
+                continue
+                
+            files_to_download = []
+            for f in files:
+                files_to_download.append({
+                    "key": f.get("name", f"file_{f.get('id')}"),
+                    "size": f.get("size", 0),
+                    "checksum": f"md5:{f.get('computed_md5')}" if f.get("computed_md5") else "",
+                    "links": {
+                        "content": f.get("download_url")
+                    }
+                })
+            
+            total_dl, total_bytes, folder_name, downloaded_files = download_record(article_full, files_to_download)
+            
+            if total_dl > 0:
+                parsed_meta = extract_figshare_meta(article_full)
+                project_url = article_full.get("url_public_html", "")
+                
+                insert_project(
+                    project_id=db_record_id,
+                    query_string=query,
+                    repository_name="Figshare",
+                    repository_url="https://figshare.com",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
+                    doi=doi,
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
+                )
+                
+                if parsed_meta["license"]:
+                    insert_license(db_record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(db_record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(db_record_id, p["name"], p["role"])
+                        
+                for dl_file in downloaded_files:
+                    file_type = dl_file.split(".")[-1] if "." in dl_file else ""
+                    insert_file(
+                        project_id=db_record_id,
+                        file_name=dl_file,
+                        file_type=file_type,
+                        status="SUCCESS"
                     )

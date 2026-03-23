@@ -1,5 +1,5 @@
 scrapers:
-  zenodo: false
+  zenodo: true
   dataverse: false
   dataverse_no: false
   borealis: false
@@ -9,7 +9,7 @@ scrapers:
   osf: false
   qdr: false
   dans: false
-  ada: true
+  ada: false
 
 settings:
   zenodo_api_base: "https://zenodo.org/api"

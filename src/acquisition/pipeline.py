@@ -114,6 +114,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        zenodo_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
         
     if SCRAPERS_CONFIG.get("dataverse", False):
@@ -122,6 +127,11 @@ def main():
         print("=================================")
         dataverse_scraper.scrape(
             extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        dataverse_scraper.scrape_smart(
             max_pages=args.max_pages,
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
@@ -138,6 +148,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        dataverse_no_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
         
     if SCRAPERS_CONFIG.get("borealis", False):
@@ -146,6 +161,11 @@ def main():
         print("=================================")
         borealis_scraper.scrape(
             extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        borealis_scraper.scrape_smart(
             max_pages=args.max_pages,
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
@@ -162,6 +182,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        aussda_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
         
     if SCRAPERS_CONFIG.get("heidata", False):
@@ -170,6 +195,11 @@ def main():
         print("=================================")
         heidata_scraper.scrape(
             extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        heidata_scraper.scrape_smart(
             max_pages=args.max_pages,
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
@@ -186,6 +216,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        figshare_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
 
     if SCRAPERS_CONFIG.get("osf", False):
@@ -194,6 +229,11 @@ def main():
         print("=================================")
         osf_scraper.scrape(
             extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        osf_scraper.scrape_smart(
             max_pages=args.max_pages,
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
@@ -210,6 +250,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        qdr_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
         
     if SCRAPERS_CONFIG.get("dans", False):
@@ -222,6 +267,11 @@ def main():
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours
         )
+        dans_scraper.scrape_smart(
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
         scrapers_run += 1
 
     if SCRAPERS_CONFIG.get("ada", False):
@@ -230,6 +280,11 @@ def main():
         print("=================================")
         ada_scraper.scrape(
             extensions=extensions,
+            max_pages=args.max_pages,
+            dry_run=args.dry_run,
+            max_runtime_hours=max_runtime_hours
+        )
+        ada_scraper.scrape_smart(
             max_pages=args.max_pages,
             dry_run=args.dry_run,
             max_runtime_hours=max_runtime_hours

@@ -1,15 +1,41 @@
 import time
 import requests
-from .config import ZENODO_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR
+from .config import ZENODO_API_BASE, RATE_LIMIT_DELAY, MAX_PAGES, RESULTS_PER_PAGE, TARGET_EXTENSIONS, RAW_DIR, SMART_QUERIES, NON_QUALITATIVE_KEYWORDS
 from .downloader import download_record, sanitize_folder_name
-from .db import is_downloaded, mark_downloaded, insert_file_metadata
+from .db import is_downloaded, insert_project, insert_file, insert_keyword, insert_person_role, insert_license
 
 def extract_zenodo_meta(record):
     meta = record.get("metadata", {})
-    author = "; ".join([c.get("name", "") for c in meta.get("creators", [])])
-    year = meta.get("publication_date", "")[:4] if meta.get("publication_date") else ""
+    title = meta.get("title", "Unknown")
+    description = meta.get("description", "")
+    language = meta.get("language", "")
+    version = meta.get("version", "")
+    upload_date = meta.get("publication_date", "")
+    
+    keywords = meta.get("keywords", [])
+    if isinstance(keywords, str):
+        keywords = [k.strip() for k in keywords.split(",")]
+
     lic = meta.get("license", {}).get("id", "")
-    return author, year, author, "", lic
+    if not isinstance(lic, str):
+        lic = str(lic)
+    
+    persons = []
+    for c in meta.get("creators", []):
+        persons.append({"name": c.get("name", ""), "role": "creator"})
+    for c in meta.get("contributors", []):
+        persons.append({"name": c.get("name", ""), "role": c.get("type", "contributor")})
+        
+    return {
+        "title": title,
+        "description": description,
+        "language": language,
+        "version": version,
+        "upload_date": upload_date,
+        "keywords": keywords,
+        "license": lic,
+        "persons": persons
+    }
 
 def api_get(url, params=None):
     """Wrapper for requests to handle rate limit delay gracefully."""
@@ -141,31 +167,188 @@ def scrape(extensions=TARGET_EXTENSIONS, max_pages=MAX_PAGES, dry_run=False, max
             
             # Log successful download to local DB
             if total_dl > 0:
-                mark_downloaded(
-                    record_id=record_id,
-                    title=title,
+                parsed_meta = extract_zenodo_meta(record)
+                project_url = record.get("links", {}).get("html", "")
+                
+                insert_project(
+                    project_id=record_id,
+                    query_string=ext,
+                    repository_name="Zenodo",
+                    repository_url="https://zenodo.org",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
                     doi=doi,
-                    folder_name=folder_name,
-                    matched_extensions=matched_exts,
-                    total_files=total_dl,
-                    total_size_bytes=total_bytes
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
                 )
                 
-                author, year, up_name, up_email, lic = extract_zenodo_meta(record)
+                if parsed_meta["license"]:
+                    insert_license(record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(record_id, p["name"], p["role"])
+                        
                 for dl_file in downloaded_files:
-                    file_info = next((f for f in files if f.get("key") == dl_file), None)
-                    file_url = file_info.get("links", {}).get("content", "") if file_info else ""
                     file_type = dl_file.split(".")[-1] if "." in dl_file else ""
-                    insert_file_metadata(
-                        file_url=file_url,
-                        local_dir_name=folder_name,
-                        local_file_name=dl_file,
-                        context_repository="Zenodo",
-                        license=lic[:100],
-                        uploader_name=up_name,
-                        uploader_email=up_email,
-                        doi=doi,
+                    insert_file(
+                        project_id=record_id,
+                        file_name=dl_file,
                         file_type=file_type,
-                        year=year,
-                        author=author
+                        status="SUCCESS"
+                    )
+
+
+def is_qualitative_dataset_zenodo(record):
+    """Check if a Zenodo record is likely qualitative research."""
+    title = record.get("metadata", {}).get("title", "")
+    description = record.get("metadata", {}).get("description", "")
+    combined_text = f"{title} {description}".lower()
+    
+    for keyword in NON_QUALITATIVE_KEYWORDS:
+        if keyword.lower() in combined_text:
+            print(f"  [SKIP] Non-qualitative record detected (matched '{keyword}'): {title[:80]}")
+            return False
+    return True
+
+
+def search_smart_zenodo(query: str, max_pages: int = MAX_PAGES):
+    """Search Zenodo using a smart query."""
+    print(f"\n--- Smart Query on Zenodo: '{query}' ---")
+    records_found = []
+    
+    for page in range(1, max_pages + 1):
+        params = {
+            "q": query,
+            "size": RESULTS_PER_PAGE,
+            "page": page
+        }
+        
+        try:
+            data = api_get(f"{ZENODO_API_BASE}/records", params)
+            hits = data.get("hits", {}).get("hits", [])
+            
+            if not hits:
+                break
+                
+            records_found.extend(hits)
+            
+            if len(hits) < RESULTS_PER_PAGE:
+                break
+                
+        except Exception as e:
+            print(f"Error fetching page {page} for smart query '{query}': {e}")
+            break
+            
+    return records_found
+
+
+def scrape_smart(queries=SMART_QUERIES, max_pages=MAX_PAGES, dry_run=False, max_runtime_hours=None):
+    """Orchestrates smart-query-based scraping for Zenodo."""
+    processed_record_ids = set()
+    start_time = time.time()
+    
+    for query in queries:
+        if max_runtime_hours is not None:
+            elapsed_hours = (time.time() - start_time) / 3600
+            if elapsed_hours >= max_runtime_hours:
+                print("\n[INFO] Maximum runtime reached. Stopping Zenodo smart query scraper.")
+                break
+                
+        records = search_smart_zenodo(query, max_pages)
+        print(f"Found {len(records)} records for smart query '{query}'. Checking files...")
+        
+        for record in records:
+            record_id = record.get("id")
+            title = record.get("title", "Unknown")
+            doi = record.get("doi", "")
+            
+            if not record_id:
+                continue
+                
+            if record_id in processed_record_ids:
+                continue 
+            processed_record_ids.add(record_id)
+            
+            folder_name_check = sanitize_folder_name(title) or f"Zenodo_Record_{record_id}"
+            if (RAW_DIR / folder_name_check).exists():
+                print(f"Skipping Record {record_id} ('{title}'): Folder already exists.")
+                continue
+
+            if not dry_run and is_downloaded(record_id):
+                print(f"Skipping Record {record_id}: Already downloaded.")
+                continue
+                
+            if max_runtime_hours is not None:
+                elapsed_hours = (time.time() - start_time) / 3600
+                if elapsed_hours >= max_runtime_hours:
+                    print("\n[INFO] Maximum runtime reached. Stopping Zenodo scraper.")
+                    return
+            
+            if not is_qualitative_dataset_zenodo(record):
+                continue
+
+            # Fetch details about the record's files
+            files = get_record_files(record_id)
+            if not files:
+                continue
+                
+            print(f"\n[SMART MATCH] Record {record_id} ({title}) matched smart query: {query}")
+            print(f"  Contains {len(files)} files. Queuing ALL for download.")
+            
+            if dry_run:
+                continue
+                
+            total_dl, total_bytes, folder_name, downloaded_files = download_record(record, files)
+            
+            if total_dl > 0:
+                parsed_meta = extract_zenodo_meta(record)
+                project_url = record.get("links", {}).get("html", "")
+                
+                insert_project(
+                    project_id=record_id,
+                    query_string=query,
+                    repository_name="Zenodo",
+                    repository_url="https://zenodo.org",
+                    project_url=project_url,
+                    version=parsed_meta["version"],
+                    title=parsed_meta["title"],
+                    description=parsed_meta["description"],
+                    language=parsed_meta["language"],
+                    doi=doi,
+                    upload_date=parsed_meta["upload_date"],
+                    download_repository_folder="raw",
+                    download_project_folder=folder_name,
+                    download_version_folder="",
+                    download_method="API-CALL"
+                )
+                
+                if parsed_meta["license"]:
+                    insert_license(record_id, parsed_meta["license"])
+                    
+                for kw in parsed_meta["keywords"]:
+                    if kw:
+                        insert_keyword(record_id, str(kw))
+                        
+                for p in parsed_meta["persons"]:
+                    if p["name"]:
+                        insert_person_role(record_id, p["name"], p["role"])
+                        
+                for dl_file in downloaded_files:
+                    file_type = dl_file.split(".")[-1] if "." in dl_file else ""
+                    insert_file(
+                        project_id=record_id,
+                        file_name=dl_file,
+                        file_type=file_type,
+                        status="SUCCESS"
                     )

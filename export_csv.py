@@ -39,5 +39,6 @@ def export_table_to_csv(table_name):
 
 if __name__ == '__main__':
     print("Exporting database tables to CSV...")
-    export_table_to_csv('records')
-    export_table_to_csv('file_metadata')
+    tables = ['projects', 'files', 'keywords', 'person_roles', 'licenses']
+    for table in tables:
+        export_table_to_csv(table)
