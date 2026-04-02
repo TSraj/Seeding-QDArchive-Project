@@ -210,7 +210,10 @@ __marimo__/
 .DS_Store
 
 
-data/
+data/*
+!data/metadata/
+data/metadata/*
+!data/metadata/*.db
 scraper.log
 
 # Exported CSV data
