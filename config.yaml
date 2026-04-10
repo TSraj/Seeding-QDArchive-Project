@@ -1,8 +1,8 @@
 scrapers:
-  zenodo: true
-  dataverse: false
+  zenodo: false
+  dataverse: true
   dataverse_no: false
-  borealis: false
+  borealis: true
   aussda: false
   heidata: false
   figshare: false
