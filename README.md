@@ -94,7 +94,7 @@ Stores project keywords/tags.
 - `project_id`: Foreign key to `projects`.
 - `keyword`: Individual tag name.
 
-### 4. `person_roles`
+### 4. `PERSON_ROLE`
 Stores authors, creators, and contacts.
 - `project_id`: Foreign key to `projects`.
 - `name`, `role`: Person's name and their specific role (e.g., Author, Data Collector).
@@ -116,7 +116,7 @@ This generates five CSV files in `data/metadata/`:
 - `projects_export.csv`
 - `files_export.csv`
 - `keywords_export.csv`
-- `person_roles_export.csv`
+- `PERSON_ROLE_export.csv`
 - `licenses_export.csv`
 
 ## Purpose and Research Implication

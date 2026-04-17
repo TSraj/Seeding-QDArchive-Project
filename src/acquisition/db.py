@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from datetime import datetime
 from typing import List, Optional, Tuple
@@ -75,7 +76,7 @@ def init_db():
 
     # 4. Person_Role Table
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS person_roles (
+        CREATE TABLE IF NOT EXISTS PERSON_ROLE (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER,
             name TEXT,
@@ -159,13 +160,26 @@ def insert_project(
     conn.close()
     return project_id
 
-def insert_file(project_id: int, file_name: str, file_type: str, status: str = "SUCCESS"):
+# Allowed values for files.status
+_STATUS_MAP = {
+    "SUCCESS":   "SUCCEEDED",
+    "SUCCEEDED": "SUCCEEDED",
+    "FAILED_SERVER_UNRESPONSIVE": "FAILED_SERVER_UNRESPONSIVE",
+    "FAILED_LOGIN_REQUIRED":      "FAILED_LOGIN_REQUIRED",
+    "FAILED_TOO_LARGE":           "FAILED_TOO_LARGE",
+}
+
+def _normalize_status(status: str) -> str:
+    """Map raw status strings to the required canonical values."""
+    return _STATUS_MAP.get(status, "SUCCEEDED")
+
+def insert_file(project_id: int, file_name: str, file_type: str, status: str = "SUCCEEDED"):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO files (project_id, file_name, file_type, status)
         VALUES (?, ?, ?, ?)
-    ''', (project_id, file_name or "", file_type or "", status))
+    ''', (project_id, file_name or "", file_type or "", _normalize_status(status)))
     conn.commit()
     conn.close()
 
@@ -179,15 +193,90 @@ def insert_keyword(project_id: int, keyword: str):
     conn.commit()
     conn.close()
 
+# Allowed values for PERSON_ROLE.role
+_ROLE_MAP = {
+    # UPLOADER
+    "uploader":  "UPLOADER",
+    "UPLOADER":  "UPLOADER",
+    # AUTHOR
+    "author":    "AUTHOR",
+    "Author":    "AUTHOR",
+    "creator":   "AUTHOR",
+    "Creator":   "AUTHOR",
+    # OWNER
+    "owner":     "OWNER",
+    "Owner":     "OWNER",
+    # OTHER (all known scraped roles that don't fit above)
+    "contact":             "OTHER",
+    "ContactPerson":       "OTHER",
+    "contributor":         "OTHER",
+    "Researcher":          "OTHER",
+    "Data Collector":      "OTHER",
+    "DataCollector":       "OTHER",
+    "Supervisor":          "OTHER",
+    "Project Member":      "OTHER",
+    "ProjectMember":       "OTHER",
+    "Data Curator":        "OTHER",
+    "DataCurator":         "OTHER",
+    "Project Leader":      "OTHER",
+    "ProjectLeader":       "OTHER",
+    "Data Manager":        "OTHER",
+    "Project Manager":     "OTHER",
+    "ProjectManager":      "OTHER",
+    "Editor":              "OTHER",
+    "Funder":              "OTHER",
+    "Hosting Institution": "OTHER",
+    "HostingInstitution":  "OTHER",
+    "Related Person":      "OTHER",
+    "Research Group":      "OTHER",
+    "ResearchGroup":       "OTHER",
+    "Sponsor":             "OTHER",
+    "Other":               "OTHER",
+    "other":               "OTHER",
+}
+
+def _normalize_role(role: str) -> str:
+    """Map raw scraped role strings to the required canonical values."""
+    return _ROLE_MAP.get(role, "UNKNOWN")
+
 def insert_person_role(project_id: int, name: str, role: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO person_roles (project_id, name, role)
+        INSERT INTO PERSON_ROLE (project_id, name, role)
         VALUES (?, ?, ?)
-    ''', (project_id, name or "", role or ""))
+    ''', (project_id, name or "", _normalize_role(role or "")))
     conn.commit()
     conn.close()
+
+# Common CC/SPDX normalisation map (case-insensitive pattern → canonical ID)
+_SPDX_MAP = [
+    (r'^cc0[\s\-_]?1\.0$',                  'CC0-1.0'),
+    (r'^cc[\s\-]?zero$',                     'CC0-1.0'),
+    (r'^cc0$',                               'CC0-1.0'),
+    (r'^cc[\s\-]?by[\s\-]?nc[\s\-]?nd[\s\-]?4\.0.*$', 'CC-BY-NC-ND-4.0'),
+    (r'^cc[\s\-]?by[\s\-]?nc[\s\-]?sa[\s\-]?4\.0.*$', 'CC-BY-NC-SA-4.0'),
+    (r'^cc[\s\-]?by[\s\-]?nc[\s\-]?4\.0.*$','CC-BY-NC-4.0'),
+    (r'^cc[\s\-]?by[\s\-]?sa[\s\-]?4\.0.*$','CC-BY-SA-4.0'),
+    (r'^cc[\s\-]?by[\s\-]?4\.0.*$',         'CC-BY-4.0'),
+    (r'^cc[\s\-]?by$',                       'CC-BY-4.0'),
+    (r'^mit[\s\-]?licen[sc]e$',              'MIT'),
+    (r'^odc[\s\-]?by$',                      'ODC-By'),
+]
+
+def _clean_license(text: str) -> str:
+    """Strip HTML tags and normalise common SPDX identifiers."""
+    # Strip HTML tags
+    text = re.sub(r'<[^>]*>', ' ', text)
+    text = re.sub(r'&amp;', '&', text)
+    text = re.sub(r'&lt;',  '<', text)
+    text = re.sub(r'&gt;',  '>', text)
+    text = re.sub(r'\s+',   ' ', text).strip()
+    # Normalise to SPDX where possible
+    for pattern, spdx in _SPDX_MAP:
+        if re.match(pattern, text, re.IGNORECASE):
+            return spdx
+    return text
 
 def insert_license(project_id: int, license_text: str):
     conn = get_connection()
@@ -195,6 +284,6 @@ def insert_license(project_id: int, license_text: str):
     cursor.execute('''
         INSERT INTO licenses (project_id, license)
         VALUES (?, ?)
-    ''', (project_id, license_text or ""))
+    ''', (project_id, _clean_license(license_text or "")))
     conn.commit()
     conn.close()
