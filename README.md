@@ -50,6 +50,7 @@ To ensure comprehensive capture of qualitative research outputs, the scraper spe
 4. **Data Acquisition (`downloader.py`):** Highly parallelized downloading algorithms retrieve raw files while respecting repository rate limits.
 5. **Relational Metadata Storage (`db.py`):** Parses hierarchical JSON responses and stores granular metadata (descriptions, languages, contributor roles, keywords) in a 5-table relational SQLite database.
 6. **Deduplication:** Hashed identifiers prevent redundant downloads/entries when pipelines are executed iteratively.
+7. **Semantic Classification (ISIC Rev. 5):** A multi-stage pipeline that automatically categorizes datasets into their respective UN ISIC divisions using `sentence-transformers` and file-extension cascade logic.
 
 ## Usage / How to Run
 
@@ -73,6 +74,28 @@ To run the Seeding QDArchive pipeline locally, follow these steps:
    
 The pipeline will automatically initialize the database, parse configuration, and execute both search strategies for all enabled repositories.
 
+### Running the Classification Pipeline
+
+Once the data is downloaded into the database, you can execute the post-processing classification pipeline. This pipeline uses `sentence-transformers` (`all-MiniLM-L6-v2`) locally to categorize qualitative projects into the UN ISIC Rev. 5 Taxonomy.
+
+1. **Phase 1: Project Type Classification**
+   Classifies projects into `QDA_PROJECT`, `QD_PROJECT`, or `OTHER_PROJECT` based on their files.
+   ```bash
+   python -m src.classification.step1_project_type
+   ```
+
+2. **Phase 2 & 3: ISIC Semantic Classification**
+   Extracts text from `.pdf`, `.docx`, `.rtf`, `.txt`, and QDA zip archives, then uses the local LLM model to map metadata and text to one of the 87 ISIC divisions.
+   ```bash
+   python -m src.classification.step3_run_classifier
+   ```
+
+3. **Phase 4: Generate Reports**
+   Generates summary distribution reports (CSV) across all repositories.
+   ```bash
+   python -m src.classification.step4_report
+   ```
+
 ## Database Structure
 
 The pipeline stores acquired metadata in a local SQLite database (`data/metadata/qdarchive.db`) using a normalized relational schema:
@@ -83,6 +106,7 @@ Stores high-level dataset information.
 - `title`, `description`, `language`, `version`, `doi`: Extracted metadata.
 - `project_url`, `repository_url`: Web links for the project.
 - `upload_date`, `download_date`: Timestamps.
+- `type`: Extracted project category (e.g., `QDA_PROJECT`, `QD_PROJECT`, `OTHER_PROJECT`).
 
 ### 2. `files`
 Stores individual file metadata linked to projects.
@@ -103,6 +127,12 @@ Stores authors, creators, and contacts.
 Stores licensing information.
 - `project_id`: Foreign key to `projects`.
 - `license`: Textual license identifier (e.g., CC-BY-4.0).
+
+### 6. `project_classifications` & `file_classifications`
+Stores the results of the semantic ISIC Rev. 5 classification.
+- `project_id` / `file_id`: Foreign keys mapping back to source records.
+- `isic_section`, `isic_division`: Assigned ISIC taxonomy codes.
+- `confidence_score`: Cosine similarity score from the embedding model.
 
 ## Exporting Data
 
