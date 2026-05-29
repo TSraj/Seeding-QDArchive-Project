@@ -85,7 +85,8 @@ Once the data is downloaded into the database, you can execute the post-processi
    ```
 
 2. **Phase 2 & 3: ISIC Semantic Classification**
-   Extracts text from `.pdf`, `.docx`, `.rtf`, `.txt`, and QDA zip archives, then uses the local LLM model to map metadata and text to one of the 87 ISIC divisions.
+   Extracts text from `.pdf`, `.docx`, `.rtf`, `.txt`, and QDA zip archives, then uses the local embedding model to map project metadata and Tier 2 content to one of the 87 ISIC divisions. 
+   *(Note: This pipeline includes robust HTML stripping for descriptions, sanitized file path resolution for Tier 2 QDA folder extraction, and an enriched ISIC taxonomy with domain-specific keywords for higher accuracy).*
    ```bash
    python -m src.classification.step3_run_classifier
    ```
@@ -94,6 +95,12 @@ Once the data is downloaded into the database, you can execute the post-processi
    Generates summary distribution reports (CSV) across all repositories.
    ```bash
    python -m src.classification.step4_report
+   ```
+
+4. **Phase 5: Generate Visualizations**
+   Reads the generated distributions CSV and creates high-quality PNG histograms (bar charts) of the ISIC Sections and Top 20 Divisions using Seaborn and Matplotlib.
+   ```bash
+   python -m src.classification.generate_histogram
    ```
 
 ## Database Structure
