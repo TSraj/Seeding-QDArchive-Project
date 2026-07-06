@@ -39,16 +39,17 @@ else:
 
 def classify(text: str) -> tuple:
     """
-    Classify input text into an ISIC Rev. 5 division.
+    Classify input text into ISIC Rev. 5 divisions (top 2 matches).
     
     Args:
         text: Input text (e.g., project title + description)
         
     Returns:
-        tuple: (section_code, division_code, confidence_score)
+        tuple: (primary_section, primary_division, primary_score,
+                secondary_section, secondary_division, secondary_score)
     """
     if not model or not text or not text.strip():
-        return (None, None, 0.0)
+        return (None, None, 0.0, None, None, 0.0)
         
     # Get embedding for the input text
     text_embedding = model.encode(text, convert_to_tensor=True)
@@ -56,14 +57,27 @@ def classify(text: str) -> tuple:
     # Compute cosine similarities
     cosine_scores = util.cos_sim(text_embedding, division_embeddings)[0]
     
-    # Find the best match
-    best_idx = torch.argmax(cosine_scores).item()
-    best_score = cosine_scores[best_idx].item()
+    # Find the top 2 matches
+    k = min(2, len(division_ids))
+    top_scores, top_indices = torch.topk(cosine_scores, k)
     
-    division_code = division_ids[best_idx]
-    section_code = DIVISIONS[division_code]['section']
+    # Primary (best) match
+    best_idx = top_indices[0].item()
+    best_score = top_scores[0].item()
+    primary_division = division_ids[best_idx]
+    primary_section = DIVISIONS[primary_division]['section']
     
-    return (section_code, division_code, best_score)
+    # Secondary (2nd best) match
+    if k >= 2:
+        second_idx = top_indices[1].item()
+        second_score = top_scores[1].item()
+        secondary_division = division_ids[second_idx]
+        secondary_section = DIVISIONS[secondary_division]['section']
+    else:
+        secondary_section, secondary_division, second_score = None, None, 0.0
+    
+    return (primary_section, primary_division, best_score,
+            secondary_section, secondary_division, second_score)
 
 def generate_tags(text: str, existing_keywords: str) -> list:
     """
@@ -97,7 +111,8 @@ if __name__ == '__main__':
     ]
     
     for text in sample_texts:
-        section, division, score = classify(text)
-        print(f"\\nText: {text}")
-        print(f"Classification: Section {section}, Division {division} (Confidence: {score:.3f})")
-        print(f"Division Name: {DIVISIONS[division]['title']}")
+        p_sec, p_div, p_score, s_sec, s_div, s_score = classify(text)
+        print(f"\nText: {text}")
+        print(f"Primary:   Section {p_sec}, Division {p_div} – {DIVISIONS[p_div]['title']} (Confidence: {p_score:.3f})")
+        if s_div:
+            print(f"Secondary: Section {s_sec}, Division {s_div} – {DIVISIONS[s_div]['title']} (Confidence: {s_score:.3f})")

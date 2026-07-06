@@ -48,6 +48,11 @@ def create_tables(cursor):
         isic_division TEXT,
         isic_division_name TEXT,
         confidence_score REAL,
+        secondary_isic_section TEXT,
+        secondary_isic_section_name TEXT,
+        secondary_isic_division TEXT,
+        secondary_isic_division_name TEXT,
+        secondary_confidence_score REAL,
         input_text_summary TEXT,
         FOREIGN KEY (project_id) REFERENCES projects(id)
     )''')
@@ -63,6 +68,11 @@ def create_tables(cursor):
         isic_division TEXT,
         isic_division_name TEXT,
         confidence_score REAL,
+        secondary_isic_section TEXT,
+        secondary_isic_section_name TEXT,
+        secondary_isic_division TEXT,
+        secondary_isic_division_name TEXT,
+        secondary_confidence_score REAL,
         input_text_summary TEXT,
         FOREIGN KEY (file_id) REFERENCES files(id),
         FOREIGN KEY (project_id) REFERENCES projects(id)
@@ -98,12 +108,11 @@ def run(db_path: str, data_dir: str):
     cursor = conn.cursor()
 
     print("Creating tables...")
+    # Drop old classification tables to ensure the new schema (with secondary columns) is applied
+    cursor.execute("DROP TABLE IF EXISTS project_classifications")
+    cursor.execute("DROP TABLE IF EXISTS file_classifications")
+    cursor.execute("DROP TABLE IF EXISTS project_tags")
     create_tables(cursor)
-    
-    # Clear existing classifications for a fresh run
-    cursor.execute("DELETE FROM project_classifications")
-    cursor.execute("DELETE FROM file_classifications")
-    cursor.execute("DELETE FROM project_tags")
     conn.commit()
 
     # Get target projects
@@ -147,18 +156,24 @@ def run(db_path: str, data_dir: str):
             file_input_text = f"{tier1_text}\\nFile: {fname}\\nContent: {extracted}"
             
             # Run file-level classification
-            f_sec, f_div, f_score = classify(file_input_text)
+            f_sec, f_div, f_score, f_sec2, f_div2, f_score2 = classify(file_input_text)
             
             if f_sec and f_div:
                 cursor.execute('''
                     INSERT INTO file_classifications 
-                    (file_id, project_id, isic_section, isic_section_name, isic_division, isic_division_name, confidence_score, input_text_summary)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (file_id, project_id, isic_section, isic_section_name, isic_division, isic_division_name, confidence_score,
+                     secondary_isic_section, secondary_isic_section_name, secondary_isic_division, secondary_isic_division_name, secondary_confidence_score,
+                     input_text_summary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     fid, pid, 
                     f_sec, SECTIONS.get(f_sec, ''), 
                     f_div, DIVISIONS.get(f_div, {}).get('title', ''), 
-                    f_score, file_input_text[:200]
+                    f_score,
+                    f_sec2, SECTIONS.get(f_sec2, '') if f_sec2 else '',
+                    f_div2, DIVISIONS.get(f_div2, {}).get('title', '') if f_div2 else '',
+                    f_score2,
+                    file_input_text[:200]
                 ))
             
             if extracted:
@@ -171,18 +186,24 @@ def run(db_path: str, data_dir: str):
             combined_extracted = "\\n---\\n".join(project_tier2_texts)[:5000]
             project_input_text += f"\\nExtracted Data: {combined_extracted}"
             
-        p_sec, p_div, p_score = classify(project_input_text)
+        p_sec, p_div, p_score, p_sec2, p_div2, p_score2 = classify(project_input_text)
         
         if p_sec and p_div:
             cursor.execute('''
                 INSERT INTO project_classifications 
-                (project_id, isic_section, isic_section_name, isic_division, isic_division_name, confidence_score, input_text_summary)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (project_id, isic_section, isic_section_name, isic_division, isic_division_name, confidence_score,
+                 secondary_isic_section, secondary_isic_section_name, secondary_isic_division, secondary_isic_division_name, secondary_confidence_score,
+                 input_text_summary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 pid, 
                 p_sec, SECTIONS.get(p_sec, ''), 
                 p_div, DIVISIONS.get(p_div, {}).get('title', ''), 
-                p_score, project_input_text[:200]
+                p_score,
+                p_sec2, SECTIONS.get(p_sec2, '') if p_sec2 else '',
+                p_div2, DIVISIONS.get(p_div2, {}).get('title', '') if p_div2 else '',
+                p_score2,
+                project_input_text[:200]
             ))
             
         # Generate tags
